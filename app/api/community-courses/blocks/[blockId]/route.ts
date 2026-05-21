@@ -8,6 +8,13 @@ export async function PATCH(
 ) {
   const { blockId } = await params;
   const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
 
   let body: { payload?: unknown; status?: "draft" | "published" | "archived" };
   try {
@@ -29,9 +36,17 @@ export async function PATCH(
   }
   patch.updated_at = new Date().toISOString();
 
-  const { error } = await supabase.from("community_course_lesson_blocks").update(patch).eq("id", blockId);
+  const { data: updatedBlock, error } = await supabase
+    .from("community_course_lesson_blocks")
+    .update(patch)
+    .eq("id", blockId)
+    .select("id")
+    .maybeSingle();
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!updatedBlock) {
+    return NextResponse.json({ error: "Block not found or forbidden" }, { status: 404 });
   }
 
   return NextResponse.json({ ok: true });
@@ -43,10 +58,25 @@ export async function DELETE(
 ) {
   const { blockId } = await params;
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("community_course_lesson_blocks").delete().eq("id", blockId);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
+  const { data: deletedBlock, error } = await supabase
+    .from("community_course_lesson_blocks")
+    .delete()
+    .eq("id", blockId)
+    .select("id")
+    .maybeSingle();
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  if (!deletedBlock) {
+    return NextResponse.json({ error: "Block not found or forbidden" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }
-

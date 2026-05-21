@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { orchestrateBlockGeneration } from "@/lib/ai/generationOrchestrator";
 import { generateBlockRequestSchema } from "@/lib/courseBuilder/types";
 
 export async function POST(req: Request) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -26,4 +36,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

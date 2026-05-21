@@ -190,15 +190,25 @@ export async function POST(req: Request) {
     explanation: string;
   }[] = [];
 
-  chaptersIn.forEach((ch, idx) => {
+  for (let idx = 0; idx < chaptersIn.length; idx++) {
+    const ch = chaptersIn[idx];
     const chapterId = chByOrder.get(idx + 1);
-    if (!chapterId) return;
+    if (!chapterId) continue;
     const qs = Array.isArray(ch.questions) ? ch.questions : [];
-    qs.forEach((q, qIdx) => {
+    for (let qIdx = 0; qIdx < qs.length; qIdx++) {
+      const q = qs[qIdx];
       const prompt = (q.prompt ?? "").trim();
       const options = Array.isArray(q.options) ? q.options.map((o) => String(o).trim()).filter(Boolean) : [];
-      if (!prompt || options.length < 2) return;
-      const ci = typeof q.correctIndex === "number" ? q.correctIndex : null;
+      if (!prompt || options.length < 2) continue;
+      const ci = typeof q.correctIndex === "number" && Number.isInteger(q.correctIndex) ? q.correctIndex : null;
+      if (ci != null && (ci < 0 || ci >= options.length)) {
+        return NextResponse.json(
+          {
+            error: `Question ${qIdx + 1} in chapter ${idx + 1} has a correct answer outside the options list.`,
+          },
+          { status: 400 }
+        );
+      }
       questionRows.push({
         chapter_id: chapterId,
         sort_order: qIdx + 1,
@@ -207,8 +217,8 @@ export async function POST(req: Request) {
         correct_index: ci,
         explanation: (q.explanation ?? "").trim(),
       });
-    });
-  });
+    }
+  }
 
   if (questionRows.length > 0) {
     const { error: qErr } = await supabase.from("community_chapter_questions").insert(questionRows);

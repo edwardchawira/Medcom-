@@ -17,16 +17,32 @@ export async function POST(req: Request) {
   }
 
   const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
   for (const item of items) {
-    const { error } = await supabase
+    if (!item.id || !Number.isInteger(item.sortOrder) || item.sortOrder < 1) {
+      return NextResponse.json({ error: "Invalid reorder item." }, { status: 400 });
+    }
+
+    const { data: updatedBlock, error } = await supabase
       .from("community_course_lesson_blocks")
       .update({ sort_order: item.sortOrder, updated_at: new Date().toISOString() })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .select("id")
+      .maybeSingle();
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!updatedBlock) {
+      return NextResponse.json({ error: "Block not found or forbidden" }, { status: 404 });
     }
   }
 
   return NextResponse.json({ ok: true });
 }
-

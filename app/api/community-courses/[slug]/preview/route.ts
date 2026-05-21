@@ -7,10 +7,13 @@ export async function GET(
 ) {
   const { slug } = await params;
   const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: course, error: courseError } = await supabase
     .from("community_courses")
-    .select("id, slug, title, learning_outcomes, assessment_html")
+    .select("id, slug, title, learning_outcomes, assessment_html, published, created_by")
     .eq("slug", slug)
     .maybeSingle();
 
@@ -18,6 +21,9 @@ export async function GET(
     return NextResponse.json({ error: courseError.message }, { status: 500 });
   }
   if (!course) {
+    return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  }
+  if (!course.published && course.created_by !== user?.id) {
     return NextResponse.json({ error: "Course not found" }, { status: 404 });
   }
 
@@ -44,9 +50,14 @@ export async function GET(
   }
 
   return NextResponse.json({
-    course,
+    course: {
+      id: course.id,
+      slug: course.slug,
+      title: course.title,
+      learning_outcomes: course.learning_outcomes,
+      assessment_html: course.assessment_html,
+    },
     chapters: chapters ?? [],
     blocks,
   });
 }
-

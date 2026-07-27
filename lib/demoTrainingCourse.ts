@@ -19,7 +19,7 @@ export type DemoLesson = {
 
 export const demoTrainingCourse = {
   slug: "ai-healthcare-learning-demo",
-  title: "Safeguarding Awareness",
+  title: "Demo Saafeguarding Awareness",
   duration: "24-32 minutes",
   learningOutcomes: [
     "Explain what safeguarding means and why it matters in youth, community, and care settings.",

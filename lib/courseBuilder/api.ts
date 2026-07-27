@@ -47,11 +47,60 @@ export async function apiGenerateOutline(payload: {
   audience: string[];
   level: "beginner" | "intermediate" | "advanced";
   duration: string;
+  sourceText?: string;
+  sourceNames?: string[];
 }) {
-  return request<{ outline: { chapters: { title: string; summary: string; lessonMarkdown: string }[] } }>(
+  return request<{
+    outline: {
+      chapters: {
+        title: string;
+        summary: string;
+        lessonMarkdown: string;
+        questions?: {
+          type: "multiple_choice" | "short_answer" | "true_false";
+          question: string;
+          options?: string[];
+          answer: string;
+          explanation?: string;
+        }[];
+      }[];
+    };
+  }>(
     "/api/community-courses/ai/generate-outline",
     { method: "POST", body: JSON.stringify(payload) }
   );
+}
+
+export async function apiExtractSource(files: File[]) {
+  const body = new FormData();
+  files.forEach((file) => body.append("files", file));
+
+  const response = await fetch("/api/community-courses/ai/extract-source", {
+    method: "POST",
+    body,
+  });
+  const data = (await response.json()) as {
+    source?: {
+      titleHint: string;
+      combinedText: string;
+      truncated: boolean;
+      files: {
+        name: string;
+        type: string;
+        size: number;
+        format: string;
+        chars: number;
+        warning?: string;
+      }[];
+    };
+    error?: string;
+  };
+
+  if (!response.ok || !data.source) {
+    throw new Error(data.error ?? "Could not extract source material.");
+  }
+
+  return data.source;
 }
 
 export async function apiGenerateBlock(payload: {
@@ -98,4 +147,3 @@ export async function apiReorderBlocks(items: { id: string; sortOrder: number }[
     body: JSON.stringify({ items }),
   });
 }
-

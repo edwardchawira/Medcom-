@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { getOpenAIModel } from "@/lib/ai/provider";
+import { getOpenAIModel, shouldUseAiFallback } from "@/lib/ai/provider";
 import { imageBlockSchema } from "@/lib/courseBuilder/types";
 
 const imageSpecSchema = z.object({
@@ -15,6 +15,9 @@ export async function generateImageBlock(input: {
   const fallbackUrl = "https://picsum.photos/seed/medcom-ai/1200/800";
   const model = getOpenAIModel("gpt-4o-mini");
   if (!model) {
+    if (!shouldUseAiFallback()) {
+      throw new Error("AI generation is not configured.");
+    }
     return imageBlockSchema.parse({
       kind: "image",
       prompt: input.prompt,
@@ -41,4 +44,3 @@ Return concise alt text and caption.`,
     caption: textResult.output.caption,
   });
 }
-

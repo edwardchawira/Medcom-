@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeError } from "@/lib/api/security";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(
@@ -18,7 +19,8 @@ export async function GET(
     .maybeSingle();
 
   if (courseError) {
-    return NextResponse.json({ error: courseError.message }, { status: 500 });
+    console.error("Community course preview lookup failed", courseError);
+    return safeError("Could not load the course preview.", 500);
   }
   if (!course) {
     return NextResponse.json({ error: "Course not found" }, { status: 404 });
@@ -34,7 +36,8 @@ export async function GET(
     .order("sort_order", { ascending: true });
 
   if (chapterError) {
-    return NextResponse.json({ error: chapterError.message }, { status: 500 });
+    console.error("Community course preview chapters failed", chapterError);
+    return safeError("Could not load the course chapters.", 500);
   }
 
   const chapterIds = (chapters ?? []).map((chapter) => chapter.id);

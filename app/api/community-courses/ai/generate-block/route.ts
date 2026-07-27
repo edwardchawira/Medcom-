@@ -1,23 +1,40 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  checkRateLimit,
+  checkSameOrigin,
+  getClientIp,
+  rateLimitResponse,
+  requireUser,
+  safeError,
+} from "@/lib/api/security";
 import { orchestrateBlockGeneration } from "@/lib/ai/generationOrchestrator";
 import { generateBlockRequestSchema } from "@/lib/courseBuilder/types";
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
+  const { user } = await requireUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    return safeError("Sign in required", 401);
+  }
+
+  const limited = checkRateLimit({
+    key: `ai:block:${user.id}:${getClientIp(req)}`,
+    limit: 40,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!limited.ok) {
+    return rateLimitResponse(limited.resetAt);
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return safeError("Invalid JSON body", 400);
   }
 
   const parsed = generateBlockRequestSchema.safeParse(body);
@@ -32,7 +49,7 @@ export async function POST(req: Request) {
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Block generation failed.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Block generation failed", err);
+    return safeError("Block generation failed. Please try again.", 502);
   }
 }

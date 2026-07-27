@@ -10,6 +10,9 @@ try {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    proxyClientMaxBodySize: "70mb",
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "picsum.photos", pathname: "/**" },

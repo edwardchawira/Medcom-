@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkSameOrigin, safeError } from "@/lib/api/security";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Body = {
@@ -10,6 +11,10 @@ type Body = {
 };
 
 export async function POST(req: Request) {
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -54,9 +59,9 @@ export async function POST(req: Request) {
   );
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Course progress upsert failed", error);
+    return safeError("Could not save course progress.", 500);
   }
 
   return NextResponse.json({ ok: true });
 }
-

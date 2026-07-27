@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkSameOrigin, safeError } from "@/lib/api/security";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { contentBlockPayloadSchema } from "@/lib/courseBuilder/types";
 
@@ -6,6 +7,10 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ blockId: string }> }
 ) {
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
   const { blockId } = await params;
   const supabase = await createSupabaseServerClient();
   const {
@@ -43,7 +48,8 @@ export async function PATCH(
     .select("id")
     .maybeSingle();
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Lesson block update failed", error);
+    return safeError("Could not update the lesson block.", 500);
   }
   if (!updatedBlock) {
     return NextResponse.json({ error: "Block not found or forbidden" }, { status: 404 });
@@ -53,9 +59,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ blockId: string }> }
 ) {
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
   const { blockId } = await params;
   const supabase = await createSupabaseServerClient();
   const {
@@ -73,7 +83,8 @@ export async function DELETE(
     .select("id")
     .maybeSingle();
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Lesson block delete failed", error);
+    return safeError("Could not delete the lesson block.", 500);
   }
   if (!deletedBlock) {
     return NextResponse.json({ error: "Block not found or forbidden" }, { status: 404 });

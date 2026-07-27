@@ -1,23 +1,40 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  checkRateLimit,
+  checkSameOrigin,
+  getClientIp,
+  rateLimitResponse,
+  requireUser,
+  safeError,
+} from "@/lib/api/security";
 import { orchestrateBlockGeneration } from "@/lib/ai/generationOrchestrator";
 import { regenerateBlockRequestSchema } from "@/lib/courseBuilder/types";
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
+  const { supabase, user } = await requireUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    return safeError("Sign in required", 401);
+  }
+
+  const limited = checkRateLimit({
+    key: `ai:regenerate:${user.id}:${getClientIp(req)}`,
+    limit: 30,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!limited.ok) {
+    return rateLimitResponse(limited.resetAt);
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return safeError("Invalid JSON body", 400);
   }
 
   const parsed = regenerateBlockRequestSchema.safeParse(body);
@@ -32,7 +49,8 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (blockError) {
-    return NextResponse.json({ error: blockError.message }, { status: 500 });
+    console.error("Block lookup failed", blockError);
+    return safeError("Could not load the lesson block.", 500);
   }
   if (!block) {
     return NextResponse.json({ error: "Block not found" }, { status: 404 });
@@ -67,7 +85,8 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    console.error("Block update failed", updateError);
+    return safeError("Could not update the lesson block.", 500);
   }
   if (!updatedBlock) {
     return NextResponse.json({ error: "Block was not updated" }, { status: 403 });
@@ -82,7 +101,8 @@ export async function POST(req: Request) {
     created_by: user.id,
   });
   if (versionError) {
-    return NextResponse.json({ error: versionError.message }, { status: 500 });
+    console.error("Block version insert failed", versionError);
+    return safeError("Could not save the block version.", 500);
   }
 
   return NextResponse.json({ block: payload, version: nextVersion }, { status: 200 });

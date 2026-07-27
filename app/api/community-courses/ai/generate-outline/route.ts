@@ -1,23 +1,40 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  checkRateLimit,
+  checkSameOrigin,
+  getClientIp,
+  rateLimitResponse,
+  requireUser,
+  safeError,
+} from "@/lib/api/security";
 import { orchestrateOutlineGeneration } from "@/lib/ai/generationOrchestrator";
 import { generateOutlineRequestSchema } from "@/lib/courseBuilder/types";
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
+  const { user } = await requireUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    return safeError("Sign in required", 401);
+  }
+
+  const limited = checkRateLimit({
+    key: `ai:outline:${user.id}:${getClientIp(req)}`,
+    limit: 12,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!limited.ok) {
+    return rateLimitResponse(limited.resetAt);
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return safeError("Invalid JSON body", 400);
   }
 
   const parsed = generateOutlineRequestSchema.safeParse(body);
@@ -25,6 +42,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const outline = await orchestrateOutlineGeneration(parsed.data);
-  return NextResponse.json({ outline }, { status: 200, headers: { "Cache-Control": "no-store" } });
+  try {
+    const outline = await orchestrateOutlineGeneration(parsed.data);
+    return NextResponse.json({ outline }, { status: 200, headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("Course outline generation failed", error);
+    return safeError("Course outline generation failed. Please try again.", 502);
+  }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { CheckCircle2, HelpCircle, RotateCcw, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export type ChapterQuizQuestion = {
@@ -12,208 +12,139 @@ export type ChapterQuizQuestion = {
   explanation: string;
 };
 
-function pct(n: number, d: number) {
-  if (d <= 0) return 0;
-  return Math.round((n / d) * 100);
+function optionLabel(index: number) {
+  return String.fromCharCode(65 + index);
+}
+
+function makeHint(question: ChapterQuizQuestion) {
+  if (question.explanation) {
+    const firstSentence = question.explanation.split(/(?<=[.!?])\s+/)[0];
+    if (firstSentence && firstSentence.length < 170) return firstSentence;
+  }
+  return "Look back at the key terms in this section and remove any answer that would increase risk or ignore the main safety step.";
 }
 
 export function ChapterQuiz({
-  title = "Check your understanding",
+  title = "Multiple Choice Questions",
   questions,
 }: {
   title?: string;
   questions: ChapterQuizQuestion[];
 }) {
-  const reduceMotion = useReducedMotion();
-  const t = reduceMotion ? 0 : 0.18;
-
   const sorted = useMemo(
     () => [...questions].sort((a, b) => a.sort_order - b.sort_order),
     [questions]
   );
-
-  const [open, setOpen] = useState(true);
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number | null>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [hintOpen, setHintOpen] = useState<Record<string, boolean>>({});
+  const question = sorted[questionIndex];
 
-  const total = sorted.length;
-  const answeredCount = sorted.reduce((acc, q) => acc + (answers[q.id] != null ? 1 : 0), 0);
-  const score = sorted.reduce((acc, q) => {
-    const a = answers[q.id];
-    if (a == null) return acc;
-    if (q.correct_index == null) return acc;
-    return acc + (a === q.correct_index ? 1 : 0);
-  }, 0);
+  if (!question) return null;
+
+  const selected = answers[question.id] ?? null;
+  const answered = selected != null;
+  const correct = answered && question.correct_index != null && selected === question.correct_index;
+  const wrong = answered && question.correct_index != null && selected !== question.correct_index;
 
   return (
-    <section className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full px-4 sm:px-6 py-4 flex items-center justify-between gap-4 bg-gradient-to-r from-teal-50 to-white hover:from-teal-100/60 transition"
-        aria-expanded={open}
-      >
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900 truncate">{title}</p>
-          <p className="text-xs text-slate-600 mt-0.5">
-            {submitted
-              ? qScoreLabel(score, total)
-              : `${answeredCount}/${total} answered • ${pct(answeredCount, total)}% ready`}
+    <section className="alison-slide-card mt-8" aria-labelledby="chapter-quiz-title">
+      <h1 id="chapter-quiz-title" className="alison-title-bar">
+        {title}
+      </h1>
+      <div className="alison-quiz">
+        <div className="alison-quiz-head">
+          <p>
+            Question {questionIndex + 1} of {sorted.length}
           </p>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="h-2 w-24 rounded-full bg-slate-200 overflow-hidden" aria-hidden>
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200" aria-hidden>
             <div
-              className="h-full rounded-full bg-teal-600 transition-all duration-300"
-              style={{ width: `${pct(answeredCount, total)}%` }}
+              className="h-full rounded-full bg-[#604696] transition-all"
+              style={{ width: `${((questionIndex + 1) / sorted.length) * 100}%` }}
             />
           </div>
-          <i
-            className={`fas fa-chevron-down text-slate-600 transition-transform ${
-              open ? "rotate-180" : ""
-            }`}
-            aria-hidden
-          />
         </div>
-      </button>
 
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            initial={reduceMotion ? false : { height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
-            transition={{ duration: t, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="px-4 sm:px-6 py-5 space-y-5">
-              {sorted.map((q, idx) => {
-                const selected = answers[q.id] ?? null;
-                const showResult = submitted && q.correct_index != null && selected != null;
-                const correct = showResult ? selected === q.correct_index : null;
-                return (
-                  <article
-                    key={q.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                          Question {idx + 1}
-                        </p>
-                        <h3 className="mt-1 text-sm sm:text-base font-semibold text-slate-900">
-                          {q.prompt}
-                        </h3>
-                      </div>
-                      {submitted && q.correct_index != null ? (
-                        <span
-                          className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
-                            correct
-                              ? "bg-green-50 text-green-800 ring-green-200"
-                              : "bg-amber-50 text-amber-900 ring-amber-200"
-                          }`}
-                        >
-                          <i className={`fas ${correct ? "fa-check" : "fa-circle-exclamation"}`} aria-hidden />
-                          {correct ? "Correct" : "Review"}
-                        </span>
-                      ) : null}
-                    </div>
+        <h2>{question.prompt}</h2>
 
-                    <div className="mt-4 grid gap-2">
-                      {q.options.map((opt, oi) => {
-                        const isSelected = selected === oi;
-                        const isCorrect = submitted && q.correct_index === oi;
-                        const isWrongPick =
-                          submitted && q.correct_index != null && isSelected && q.correct_index !== oi;
-                        return (
-                          <button
-                            key={`${q.id}-${oi}`}
-                            type="button"
-                            onClick={() => {
-                              setAnswers((prev) => ({ ...prev, [q.id]: oi }));
-                              setSubmitted(false);
-                            }}
-                            className={`w-full text-left rounded-xl border px-3 py-3 sm:px-4 sm:py-3.5 transition-all active:scale-[0.99] ${
-                              isCorrect
-                                ? "border-green-300 bg-green-50"
-                                : isWrongPick
-                                  ? "border-amber-300 bg-amber-50"
-                                  : isSelected
-                                    ? "border-teal-300 bg-teal-50"
-                                    : "border-slate-200 hover:border-teal-200 hover:bg-slate-50"
-                            }`}
-                          >
-                            <div className="flex items-start gap-3">
-                              <span
-                                className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
-                                  isCorrect
-                                    ? "border-green-500 bg-green-100 text-green-800"
-                                    : isWrongPick
-                                      ? "border-amber-500 bg-amber-100 text-amber-900"
-                                      : isSelected
-                                        ? "border-teal-500 bg-teal-100 text-teal-900"
-                                        : "border-slate-300 bg-white text-slate-600"
-                                }`}
-                                aria-hidden
-                              >
-                                {String.fromCharCode(65 + oi)}
-                              </span>
-                              <span className="text-sm text-slate-900">{opt}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+        <div className="alison-answer-list">
+          {question.options.map((option, index) => {
+            const isSelected = selected === index;
+            const isCorrect = answered && question.correct_index === index;
+            const isWrongPick = wrong && isSelected;
+            return (
+              <button
+                key={`${question.id}-${index}`}
+                type="button"
+                onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: index }))}
+                className={[
+                  isCorrect ? "is-correct" : "",
+                  isWrongPick ? "is-wrong" : "",
+                  isSelected && !isCorrect && !isWrongPick ? "is-selected" : "",
+                ].join(" ")}
+              >
+                <span>{optionLabel(index)}</span>
+                <strong>{option}</strong>
+              </button>
+            );
+          })}
+        </div>
 
-                    {submitted && q.explanation ? (
-                      <p className="mt-3 text-sm text-slate-700 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-                        {q.explanation}
-                      </p>
-                    ) : null}
-                  </article>
-                );
-              })}
+        <button
+          type="button"
+          className="alison-hint-button"
+          onClick={() => setHintOpen((prev) => ({ ...prev, [question.id]: !prev[question.id] }))}
+        >
+          <HelpCircle className="h-4 w-4" aria-hidden />
+          {hintOpen[question.id] ? "Hide hint" : "Show hint"}
+        </button>
 
-              <div className="flex flex-wrap gap-3 items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-sm text-slate-700">
-                  {submitted ? (
-                    <span className="font-semibold text-slate-900">{qScoreLabel(score, total)}</span>
-                  ) : (
-                    <span>
-                      Pick an answer for each question, then submit to see feedback.
-                    </span>
-                  )}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAnswers({});
-                      setSubmitted(false);
-                    }}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 transition"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSubmitted(true)}
-                    className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 transition disabled:opacity-50"
-                    disabled={answeredCount < total}
-                  >
-                    Submit
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+        {hintOpen[question.id] ? (
+          <p className="alison-hint-panel">{makeHint(question)}</p>
         ) : null}
-      </AnimatePresence>
+
+        {answered ? (
+          <div className={correct ? "alison-feedback is-correct" : "alison-feedback is-wrong"} role="status">
+            {correct ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+            <p>
+              <strong>{correct ? "Correct." : "Not quite."}</strong>{" "}
+              {question.explanation ||
+                (correct
+                  ? "That answer best matches the section."
+                  : "Review the lesson detail and try again.")}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="alison-quiz-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setAnswers((prev) => ({ ...prev, [question.id]: null }));
+              setHintOpen((prev) => ({ ...prev, [question.id]: false }));
+            }}
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden />
+            Reset
+          </button>
+          <div>
+            <button
+              type="button"
+              disabled={questionIndex === 0}
+              onClick={() => setQuestionIndex((v) => Math.max(0, v - 1))}
+            >
+              Previous question
+            </button>
+            <button
+              type="button"
+              disabled={questionIndex === sorted.length - 1}
+              onClick={() => setQuestionIndex((v) => Math.min(sorted.length - 1, v + 1))}
+            >
+              Next question
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
-
-function qScoreLabel(score: number, total: number) {
-  if (total <= 0) return "No questions yet";
-  return `Score: ${score}/${total}`;
-}
-

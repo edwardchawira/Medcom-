@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoomIn } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -9,7 +10,20 @@ export function MarkdownContent({ markdown }: { markdown: string }) {
     <div className="max-w-none text-slate-800 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1 [&_a]:text-teal-700 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-teal-900 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded">
       {parts.map((p, idx) =>
         p.kind === "markdown" ? (
-          <Markdown key={idx} remarkPlugins={[remarkGfm]}>
+          <Markdown
+            key={idx}
+            remarkPlugins={[remarkGfm]}
+            components={{
+              img: ({ src, alt }) => (
+                <figure className="alison-image-frame">
+                  <img src={src || ""} alt={alt || ""} />
+                  <button type="button" aria-label={alt ? `View ${alt}` : "View image"}>
+                    <ZoomIn className="h-4 w-4" aria-hidden />
+                  </button>
+                </figure>
+              ),
+            }}
+          >
             {p.value}
           </Markdown>
         ) : (
@@ -72,4 +86,3 @@ function splitVideoEmbeds(input: string): Part[] {
   flush();
   return out.length ? out : [{ kind: "markdown", value: input }];
 }
-

@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["@dyingc/brave-search-mcp-server"],
       "env": {
-        "BRAVE_API_KEY": "BSAWbIMlTqP0kMZjaxwwoxI7eTZ6cbM"
+        "BRAVE_API_KEY": "replace-with-your-local-api-key"
       }
     }
   }

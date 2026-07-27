@@ -4,11 +4,12 @@ import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sparkles, Wand2, Trash2, ArrowUp, ArrowDown, Eye, Pencil } from "lucide-react";
+import { Sparkles, Wand2, Trash2, ArrowUp, ArrowDown, Eye, Pencil, UploadCloud, FileText, X } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import {
   apiDeleteBlock,
+  apiExtractSource,
   apiGenerateBlock,
   apiGenerateOutline,
   apiPatchBlock,
@@ -51,14 +52,30 @@ function questionsFromBlocks(blocks: ContentBlock[]) {
     } => block.payload.kind === "quiz"
   );
   return quizBlocks.flatMap((block) =>
-    block.payload.questions.map((question) => ({
-      prompt: question.question,
-      options:
-        question.type === "short_answer" ? ["Free text answer", "Keyword answer"] : question.options ?? ["True", "False"],
-      correctIndex: 0,
-      explanation: question.explanation ?? "",
-    }))
+    block.payload.questions.map((question) => {
+      const options =
+        question.type === "short_answer"
+          ? [question.answer, "Needs supervisor review"]
+          : question.options ?? ["True", "False"];
+      const answerIndex = options.findIndex(
+        (option) => option.trim().toLowerCase() === question.answer.trim().toLowerCase()
+      );
+      return {
+        prompt: question.question,
+        options,
+        correctIndex: answerIndex >= 0 ? answerIndex : null,
+        explanation: question.explanation ?? "",
+      };
+    })
   );
+}
+
+type ExtractedSource = Awaited<ReturnType<typeof apiExtractSource>>;
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function CourseBuilderV2() {
@@ -71,6 +88,7 @@ export function CourseBuilderV2() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [inlinePromptByBlock, setInlinePromptByBlock] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [source, setSource] = useState<ExtractedSource | null>(null);
 
   const outlineMutation = useMutation({
     mutationFn: apiGenerateOutline,
@@ -78,6 +96,24 @@ export function CourseBuilderV2() {
       const generatedChapters: Chapter[] = data.outline.chapters.map((chapter, index) => {
         const chapterId = tmpId("tmp_chapter");
         const blockId = tmpId("tmp_block");
+        const quizBlockId = tmpId("tmp_block");
+        const questions = (chapter.questions ?? []).map((question) => {
+          const options =
+            question.type === "short_answer"
+              ? []
+              : question.options?.length
+                ? question.options
+                : question.type === "true_false"
+                  ? ["True", "False"]
+                  : [];
+          const answer = options.includes(question.answer) ? question.answer : options[0] ?? question.answer;
+          return {
+            ...question,
+            options,
+            answer,
+            explanation: question.explanation ?? "",
+          };
+        });
         return {
           id: chapterId,
           title: chapter.title,
@@ -95,6 +131,22 @@ export function CourseBuilderV2() {
                 markdown: chapter.lessonMarkdown,
               },
             },
+            ...(questions.length
+              ? [
+                  {
+                    id: quizBlockId,
+                    chapterId,
+                    sortOrder: 2,
+                    source: "ai" as const,
+                    status: "draft" as const,
+                    payload: {
+                      kind: "quiz" as const,
+                      title: `${chapter.title} knowledge check`,
+                      questions,
+                    },
+                  },
+                ]
+              : []),
           ],
         };
       });
@@ -107,6 +159,21 @@ export function CourseBuilderV2() {
 
   const generateBlockMutation = useMutation({
     mutationFn: apiGenerateBlock,
+  });
+
+  const sourceMutation = useMutation({
+    mutationFn: apiExtractSource,
+    onSuccess: (data) => {
+      setSource(data);
+      setError(null);
+      setTitle((current) => current || data.titleHint);
+      setPrompt((current) =>
+        current ||
+        "Create a professional healthcare training course from the uploaded source material. Extract the important information, remove duplication, and structure it into practical learner-friendly chapters."
+      );
+    },
+    onError: (mutationError) =>
+      setError(mutationError instanceof Error ? mutationError.message : "Source extraction failed."),
   });
 
   const regenerateBlockMutation = useMutation({
@@ -136,7 +203,7 @@ export function CourseBuilderV2() {
           .split(",")
           .map((entry) => entry.trim())
           .filter(Boolean),
-        learning_outcomes: ["Generated with AI-assisted builder", "Edited and validated by author"],
+        learning_outcomes: [],
         assessment_html: "## Final assessment\n\nComplete each question and review your answers.",
         chapters: chapters.map((chapter) => ({
           title: chapter.title,
@@ -152,7 +219,7 @@ export function CourseBuilderV2() {
       });
       const payload = (await response.json()) as { slug?: string; error?: string };
       if (!response.ok) {
-        throw new Error(payload.error ?? "Could not publish course.");
+        throw new Error(payload.error ?? "Could not save course draft.");
       }
       return payload;
     },
@@ -161,7 +228,7 @@ export function CourseBuilderV2() {
         router.push(`/courses/community/${data.slug}/overview`);
       }
     },
-    onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : "Publish failed."),
+    onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : "Draft save failed."),
   });
 
   const selectedChapter = useMemo(
@@ -277,6 +344,12 @@ export function CourseBuilderV2() {
     }
   }
 
+  function handleSourceFiles(fileList: FileList | null) {
+    const files = Array.from(fileList ?? []);
+    if (files.length === 0) return;
+    sourceMutation.mutate(files);
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <SiteNav />
@@ -320,22 +393,93 @@ export function CourseBuilderV2() {
               onChange={(event) => setPrompt(event.target.value)}
             />
           </div>
+          <div className="mt-4 rounded-xl border border-dashed border-teal-200 bg-teal-50/50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-white p-2 text-teal-700 shadow-sm">
+                  <UploadCloud className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Build from source material</p>
+                  <p className="text-xs leading-5 text-slate-600">
+                    Upload PDFs, PowerPoint decks, Word docs, Markdown, CSV, HTML, RTF, JSON, or plain text.
+                  </p>
+                </div>
+              </div>
+              <label className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-teal-800 shadow-sm ring-1 ring-teal-200 transition hover:bg-teal-50">
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  accept=".pdf,.pptx,.docx,.txt,.md,.markdown,.csv,.tsv,.html,.htm,.json,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*"
+                  onChange={(event) => {
+                    handleSourceFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                {sourceMutation.isPending ? "Extracting..." : "Upload files"}
+              </label>
+            </div>
+
+            {source ? (
+              <div className="mt-4 rounded-xl border border-teal-100 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Source ready</p>
+                    <p className="text-xs text-slate-600">
+                      {source.combinedText.length.toLocaleString()} characters extracted
+                      {source.truncated ? " (trimmed for AI context)" : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
+                    onClick={() => setSource(null)}
+                    aria-label="Remove uploaded source material"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {source.files.map((file) => (
+                    <div
+                      key={`${file.name}-${file.size}`}
+                      className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                    >
+                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-900">{file.name}</p>
+                        <p>
+                          {file.format} · {formatBytes(file.size)} · {file.chars.toLocaleString()} chars
+                        </p>
+                        {file.warning ? <p className="text-amber-700">{file.warning}</p> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() =>
                 outlineMutation.mutate({
                   title: title || "Untitled course",
-                  prompt,
+                  prompt:
+                    prompt ||
+                    "Create a professional healthcare training course from the uploaded source material.",
                   audience: audienceText
                     .split(",")
                     .map((entry) => entry.trim())
                     .filter(Boolean),
                   level: "intermediate",
                   duration,
+                  sourceText: source?.combinedText ?? "",
+                  sourceNames: source?.files.map((file) => file.name) ?? [],
                 })
               }
-              disabled={!prompt || outlineMutation.isPending}
+              disabled={(!prompt && !source) || outlineMutation.isPending}
               className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-50"
             >
               {outlineMutation.isPending ? "Generating..." : "Generate course outline"}
@@ -346,7 +490,7 @@ export function CourseBuilderV2() {
               disabled={chapters.length === 0 || publishMutation.isPending}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
             >
-              {publishMutation.isPending ? "Publishing..." : "Publish course"}
+              {publishMutation.isPending ? "Saving..." : "Save draft"}
             </button>
           </div>
           {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
@@ -476,24 +620,84 @@ export function CourseBuilderV2() {
 
                       {block.payload.kind === "quiz" ? (() => {
                         const quizPayload = block.payload;
+                        const updateQuestion = (
+                          index: number,
+                          updates: Partial<(typeof quizPayload.questions)[number]>
+                        ) => {
+                          const questions = quizPayload.questions.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, ...updates } : item
+                          );
+                          void saveInline(block, {
+                            kind: "quiz",
+                            title: quizPayload.title,
+                            questions,
+                          });
+                        };
                         return (
                           <div className="space-y-2">
                             {quizPayload.questions.map((question, index) => (
-                              <div key={`${block.id}-${index}`} className="rounded-lg border border-slate-200 bg-white p-2">
-                                <p className="text-xs font-semibold uppercase text-slate-500">{question.type}</p>
-                                <input
-                                  value={question.question}
+                              <div key={`${block.id}-${index}`} className="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
+                                <select
+                                  value={question.type}
                                   onChange={(event) => {
-                                    const questions = quizPayload.questions.map((item, itemIndex) =>
-                                      itemIndex === index ? { ...item, question: event.target.value } : item
-                                    );
-                                    void saveInline(block, {
-                                      kind: "quiz",
-                                      title: quizPayload.title,
-                                      questions,
+                                    const type = event.target.value as typeof question.type;
+                                    updateQuestion(index, {
+                                      type,
+                                      options: type === "short_answer" ? [] : question.options?.length ? question.options : ["True", "False"],
                                     });
                                   }}
-                                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold uppercase text-slate-600"
+                                >
+                                  <option value="multiple_choice">Multiple choice</option>
+                                  <option value="true_false">True / false</option>
+                                  <option value="short_answer">Short answer</option>
+                                </select>
+                                <input
+                                  value={question.question}
+                                  onChange={(event) => updateQuestion(index, { question: event.target.value })}
+                                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                />
+                                {question.type !== "short_answer" ? (
+                                  <>
+                                    <textarea
+                                      rows={3}
+                                      value={(question.options ?? []).join("\n")}
+                                      onChange={(event) => {
+                                        const options = event.target.value
+                                          .split(/\r?\n/)
+                                          .map((option) => option.trim())
+                                          .filter(Boolean);
+                                        updateQuestion(index, {
+                                          options,
+                                          answer: options.includes(question.answer) ? question.answer : options[0] ?? "",
+                                        });
+                                      }}
+                                      className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                    />
+                                    <select
+                                      value={question.answer}
+                                      onChange={(event) => updateQuestion(index, { answer: event.target.value })}
+                                      className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                    >
+                                      {(question.options ?? []).map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </>
+                                ) : (
+                                  <input
+                                    value={question.answer}
+                                    onChange={(event) => updateQuestion(index, { answer: event.target.value, options: [] })}
+                                    className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                  />
+                                )}
+                                <textarea
+                                  rows={2}
+                                  value={question.explanation ?? ""}
+                                  onChange={(event) => updateQuestion(index, { explanation: event.target.value })}
+                                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
                                 />
                               </div>
                             ))}
@@ -576,4 +780,3 @@ export function CourseBuilderV2() {
     </div>
   );
 }
-

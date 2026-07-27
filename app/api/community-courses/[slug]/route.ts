@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
+import { checkSameOrigin, safeError } from "@/lib/api/security";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
   const { slug } = await params;
   const supabase = await createSupabaseServerClient();
   const {
@@ -22,7 +27,8 @@ export async function DELETE(
     .maybeSingle();
 
   if (courseErr) {
-    return NextResponse.json({ error: courseErr.message }, { status: 500 });
+    console.error("Community course lookup failed", courseErr);
+    return safeError("Could not load the course.", 500);
   }
   if (!course) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -37,9 +43,9 @@ export async function DELETE(
     .eq("id", course.id);
 
   if (delErr) {
-    return NextResponse.json({ error: delErr.message }, { status: 500 });
+    console.error("Community course delete failed", delErr);
+    return safeError("Could not delete the course.", 500);
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }
-

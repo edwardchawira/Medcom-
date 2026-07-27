@@ -9,6 +9,8 @@ export async function orchestrateOutlineGeneration(input: {
   audience: string[];
   level: string;
   duration: string;
+  sourceText?: string;
+  sourceNames?: string[];
 }) {
   return generateCourseOutline(input);
 }
@@ -28,4 +30,3 @@ export async function orchestrateBlockGeneration(input: {
   }
   return generateQuestionBlock(input);
 }
-

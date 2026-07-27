@@ -259,7 +259,6 @@ export function CourseUploadForm() {
           duration,
           thumbnail: thumbnail.trim() || "/images/courses/cover-medication.png",
           featured,
-          published: true,
           learning_outcomes,
           assessment_html: assessmentHtml,
           chapters: chapters.map((c) => ({
@@ -276,7 +275,7 @@ export function CourseUploadForm() {
       });
       const json = (await res.json()) as { error?: string; slug?: string };
       if (!res.ok) {
-        setError(json.error ?? "Could not publish course.");
+        setError(json.error ?? "Could not save course draft.");
         return;
       }
       if (json.slug) {
@@ -306,8 +305,8 @@ export function CourseUploadForm() {
 
         <h1 className="text-2xl font-bold text-slate-900 mb-2">Upload a course</h1>
         <p className="text-slate-600 mb-8">
-          Published courses appear in the catalog like other Medcom modules. Write chapters in simple
-          text (supports basic formatting like headings, bullet points, and links). Add the
+          Saved drafts are available to you for review before they appear in the catalog. Write chapters
+          in simple text (supports basic formatting like headings, bullet points, and links). Add the
           questionnaire with the form below — no HTML required.
         </p>
 
@@ -751,7 +750,7 @@ export function CourseUploadForm() {
               disabled={submitting || uploadingThumb}
               className="inline-flex items-center justify-center rounded-lg bg-teal-600 px-6 py-3 text-white font-semibold shadow-sm hover:bg-teal-700 disabled:opacity-50"
             >
-              {submitting ? "Publishing…" : "Publish course"}
+              {submitting ? "Saving…" : "Save draft"}
             </button>
             <Link
               href="/courses"

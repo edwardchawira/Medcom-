@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { medicationCourse } from "@/lib/medicationCourseData";
 import { bindChapterMcqs } from "@/lib/bindChapterMcqs";
 import { ActiveLearningChrome } from "@/components/learning/ActiveLearningChrome";
 import { contentBannerForChapter } from "@/lib/contentThemes";
 import { CheckpointModal } from "@/components/learning/CheckpointModal";
+import { LearnerTrainingShell, type LearnerLesson } from "@/components/learning/LearnerTrainingShell";
+import { sanitizeLearningHtml } from "@/lib/sanitizeHtml";
 import {
   getCheckpointWhenLeavingStep,
   isCheckpointPassed,
@@ -47,6 +48,33 @@ function progressPercent(idx: number, totalSteps: number) {
   return Math.round(((idx + 1) / totalSteps) * 100);
 }
 
+function stripHtml(input: string) {
+  return input
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function estimatedMinutesForHtml(html: string) {
+  const words = stripHtml(html).split(/\s+/).filter(Boolean).length;
+  return Math.max(2, Math.ceil(words / 160));
+}
+
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} hr ${m} min` : `${h} hr`;
+}
+
 export function MedicationCourseReader({ stepParam }: { stepParam: string }) {
   const router = useRouter();
   const course = medicationCourse;
@@ -54,13 +82,19 @@ export function MedicationCourseReader({ stepParam }: { stepParam: string }) {
   const totalSteps = chapters.length + 1;
   const stepIndex = parseStepParam(stepParam, chapters.length);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [completed, setCompleted] = useState<Set<number>>(loadProgress);
+  const [completed, setCompleted] = useState<Set<number>>(() => new Set());
   const [checkpointOpen, setCheckpointOpen] = useState<MedicationCheckpoint | null>(null);
+  const [fullscreen, setFullscreen] = useState(true);
 
   const isAssessment = stepIndex === chapters.length;
   const isLast = stepIndex >= totalSteps - 1;
+
+  useEffect(() => {
+    setCompleted(loadProgress());
+  }, []);
 
   const goToStep = useCallback(
     (idx: number) => {
@@ -164,7 +198,40 @@ export function MedicationCourseReader({ stepParam }: { stepParam: string }) {
   const bodyHtml = isAssessment
     ? course.assessmentHtml
     : ch?.html ?? "";
+  const safeBodyHtml = useMemo(() => sanitizeLearningHtml(bodyHtml), [bodyHtml]);
   const pct = progressPercent(stepIndex, totalSteps);
+  const estimatedMinutes = useMemo(() => estimatedMinutesForHtml(safeBodyHtml), [safeBodyHtml]);
+  const totalEstimatedMinutes = useMemo(
+    () =>
+      chapters.reduce((sum, chapter) => sum + estimatedMinutesForHtml(chapter.html), 0) +
+      estimatedMinutesForHtml(course.assessmentHtml),
+    [chapters, course.assessmentHtml]
+  );
+  const hintText = isAssessment
+    ? "Hint. Read each question carefully. Focus on safe practice, consent, documentation, and escalation."
+    : `Hint. For ${ch?.title ?? "this section"}, identify what you would check, record, and escalate during a real home care visit.`;
+
+  const requestPlayerFullscreen = useCallback(async () => {
+    if (fullscreen) {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      setFullscreen(false);
+      return;
+    }
+    setFullscreen(true);
+    const el = playerRef.current;
+    if (!el || !document.fullscreenEnabled) return;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    await el.requestFullscreen();
+  }, [fullscreen]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     void fetch("/api/progress", {
@@ -182,8 +249,29 @@ export function MedicationCourseReader({ stepParam }: { stepParam: string }) {
     });
   }, [isAssessment, pct, stepIndex]);
 
+  const lessonItems: LearnerLesson[] = useMemo(
+    () => [
+      ...chapters.map((chapter) => ({
+        id: String(chapter.id),
+        title: chapter.title,
+        minutes: estimatedMinutesForHtml(chapter.html),
+      })),
+      {
+        id: "assessment",
+        title: "Final assessment",
+        minutes: estimatedMinutesForHtml(course.assessmentHtml),
+      },
+    ],
+    [chapters, course.assessmentHtml]
+  );
+  const completedMinutes = lessonItems.reduce(
+    (sum, lesson, idx) => sum + (completed.has(idx) ? lesson.minutes : 0),
+    0
+  );
+  const estimatedRemainingMinutes = Math.max(0, totalEstimatedMinutes - completedMinutes);
+
   return (
-    <>
+    <div ref={playerRef}>
       {checkpointOpen ? (
         <CheckpointModal
           checkpoint={checkpointOpen}
@@ -191,223 +279,51 @@ export function MedicationCourseReader({ stepParam }: { stepParam: string }) {
           onStay={() => setCheckpointOpen(null)}
         />
       ) : null}
-      <nav className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
-                aria-label="Open chapter menu"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <i className="fas fa-bars text-xl" aria-hidden />
-              </button>
-              <Link
-                href="/"
-                className="flex-shrink-0 flex items-center no-underline text-inherit hover:opacity-90 transition-opacity"
-              >
-                <i className="fas fa-tint text-teal-600 text-2xl mr-2" aria-hidden />
-                <span className="text-xl font-bold">
-                  <span className="logo-florence">Med</span>
-                  <span className="logo-academy">com</span>
-                </span>
-              </Link>
-              <span className="md:hidden text-sm font-medium text-slate-700 truncate max-w-[9rem]">
-                {isAssessment ? "Assessment" : `Ch. ${stepIndex + 1}`}
-              </span>
-            </div>
-            <div className="hidden md:flex md:items-center md:space-x-6">
-              <Link
-                href="/courses/medication-home-care/overview"
-                className="text-sm text-teal-700 hover:text-teal-900 font-medium"
-              >
-                ← Course overview
-              </Link>
-              <Link
-                href="/courses"
-                className="text-slate-600 hover:text-teal-600 px-3 py-2 rounded-md text-sm font-medium"
-              >
-                Courses
-              </Link>
-              <Link
-                href="/my-learning"
-                className="text-teal-600 font-semibold px-3 py-2 rounded-md text-sm"
-              >
-                My Learning
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <div
-        className={`fixed inset-0 bg-black bg-opacity-40 z-[90] md:hidden transition-opacity ${
-          sidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-        }`}
-        aria-hidden={!sidebarOpen}
-        onClick={() => setSidebarOpen(false)}
-      />
-
-      <div className="flex learning-main max-w-7xl mx-auto relative">
-        <aside
-          className={`fixed md:sticky md:top-16 top-0 left-0 z-[95] w-72 max-w-[85vw] h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)] bg-white border-r border-slate-200 overflow-y-auto transform transition-transform duration-200 ease-out ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-          }`}
-        >
-          <div className="p-4 border-b border-slate-100 flex justify-between items-center md:block">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                Course menu
-              </p>
-              <p className="text-sm font-semibold text-slate-900 mt-1">
-                Prompting &amp; medication
-              </p>
-            </div>
-            <button
-              type="button"
-              className="md:hidden p-2 text-slate-500"
-              aria-label="Close menu"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <i className="fas fa-times" aria-hidden />
-            </button>
-          </div>
-          <nav className="p-3" aria-label="Chapters">
-            <p className="text-xs font-semibold text-slate-500 px-2 mb-2">Chapters</p>
-            <div className="space-y-0.5">
-              {chapters.map((chapter, i) => {
-                const done = completed.has(i);
-                const active = i === stepIndex && !isAssessment;
-                return (
-                  <button
-                    key={chapter.id}
-                    type="button"
-                    className={`learning-chapter-btn w-full text-left px-3 py-2.5 rounded-lg text-sm border transition-colors ${
-                      active
-                        ? "bg-teal-50 border-teal-200 text-teal-900 font-semibold"
-                        : "border-transparent text-slate-700 hover:bg-slate-50"
-                    }`}
-                    onClick={() => goToStep(i)}
-                  >
-                    <span className="font-medium text-slate-500 w-6 inline-block">
-                      {i + 1}
-                    </span>
-                    <span className="align-middle">{chapter.title}</span>
-                    {done ? (
-                      <i className="fas fa-check-circle text-green-600 float-right mt-0.5" aria-hidden />
-                    ) : null}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                className={`learning-chapter-btn w-full text-left px-3 py-2.5 rounded-lg text-sm border mt-2 transition-colors ${
-                  isAssessment
-                    ? "bg-teal-50 border-teal-200 text-teal-900 font-semibold"
-                    : "border-transparent text-slate-700 hover:bg-slate-50"
-                }`}
-                onClick={() => goToStep(chapters.length)}
-              >
-                <span className="font-medium text-slate-500 w-6 inline-block">
-                  <i className="fas fa-clipboard-check" aria-hidden />
-                </span>{" "}
-                Assessment
-              </button>
-            </div>
-          </nav>
-          <div className="p-4 border-t border-slate-100 text-xs text-slate-500">
-            <p>
-              Reference URLs (Florence) are listed in{" "}
-              <code className="bg-slate-100 px-1 rounded">data/chapters.json</code> for mapping.
-            </p>
-          </div>
-        </aside>
-
-        <main className="flex-1 min-w-0 p-4 md:p-8 lg:pl-8 pb-28 md:pb-32">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-              <p className="text-sm text-slate-600 mt-1">{meta}</p>
-              <p className="sr-only" aria-live="polite">
-                {title}. {meta}.
-              </p>
-            </div>
-            <div className="w-full sm:w-56">
-              <div className="flex justify-between text-xs text-slate-600 mb-1">
-                <span>Progress</span>
-                <span aria-live="polite">{pct}%</span>
-              </div>
-              <div
-                className="h-2 bg-slate-200 rounded-full overflow-hidden"
-                role="progressbar"
-                aria-valuenow={pct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Course progress"
-              >
-                <div
-                  className="h-full bg-teal-600 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <ActiveLearningChrome
+      <LearnerTrainingShell
+        courseTitle={course.courseTitle}
+        overviewHref="/courses/medication-home-care/overview"
+        activeTitle={title}
+        activeMeta={meta}
+        activeLessonIndex={stepIndex}
+        totalSteps={totalSteps}
+        progressPercent={pct}
+        completedLessons={completed.size}
+        knowledgeChecksCompleted={completed.size}
+        confidenceScore={Math.max(65, Math.min(96, pct + 24))}
+        estimatedRemainingMinutes={estimatedRemainingMinutes}
+        activeEstimatedMinutes={estimatedMinutes}
+        lessons={lessonItems}
+        completed={completed}
+        isAssessment={isAssessment}
+        fullscreen={fullscreen}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onCloseSidebar={() => setSidebarOpen(false)}
+        onGoToLesson={goToStep}
+        onPrevious={prev}
+        onNext={next}
+        onHint={() => alert(hintText)}
+        onToggleFullscreen={() => void requestPlayerFullscreen()}
+        learningObjectives={course.learningOutcomes}
+        lessonText={stripHtml(safeBodyHtml)}
+      >
+        <ActiveLearningChrome
             stepKey={stepParam}
             stepIndex={stepIndex}
             totalContentSteps={chapters.length}
             isAssessment={isAssessment}
             chapterTitle={ch?.title}
             learningOutcomes={course.learningOutcomes}
-            estimatedMinutes={isAssessment ? 5 : 3}
+            estimatedMinutes={estimatedMinutes}
             contentBannerSrc={isAssessment ? undefined : contentBannerForChapter(stepIndex)}
           >
             <div
               ref={bodyRef}
               className="max-w-none text-slate-800 leading-relaxed [&_h3]:text-lg [&_h3]:font-semibold [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:text-teal-700 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-teal-900"
-              dangerouslySetInnerHTML={{ __html: bodyHtml }}
+              dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
             />
-          </ActiveLearningChrome>
-        </main>
-      </div>
-
-      <footer
-        id="learningFooterNav"
-        className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white safe-area-pb"
-        role="navigation"
-        aria-label="Chapter navigation"
-      >
-        <div className="max-w-7xl mx-auto px-2 sm:px-4 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4">
-          <button
-            type="button"
-            disabled={stepIndex === 0}
-            onClick={prev}
-            className="justify-self-start px-3 sm:px-5 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-medium hover:bg-slate-50 active:scale-[0.98] transition-transform disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            <i className="fas fa-chevron-left mr-1 sm:mr-2" aria-hidden />
-            <span className="hidden sm:inline">Previous</span>
-            <span className="sm:hidden">Prev</span>
-          </button>
-          <p className="text-center text-xs sm:text-sm text-slate-500 min-w-0 truncate px-1">
-            {isAssessment
-              ? `Assessment • ${totalSteps} / ${totalSteps}`
-              : `Step ${stepIndex + 1} of ${totalSteps}`}
-          </p>
-          <button
-            type="button"
-            onClick={next}
-            className="justify-self-end px-3 sm:px-5 py-2.5 rounded-lg bg-teal-600 text-white font-semibold hover:bg-teal-700 active:scale-[0.98] transition-transform shadow-sm whitespace-nowrap min-w-[5.5rem] sm:min-w-0"
-          >
-            <span>{isLast ? "Finish" : "Next"}</span>
-            <i
-              className={`ml-1 sm:ml-2 ${isLast ? "fas fa-check" : "fas fa-chevron-right"}`}
-              aria-hidden
-            />
-          </button>
-        </div>
-      </footer>
-    </>
+        </ActiveLearningChrome>
+      </LearnerTrainingShell>
+    </div>
   );
 }

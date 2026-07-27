@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeError } from "@/lib/api/security";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -25,11 +26,18 @@ export async function GET() {
     .limit(20);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Dashboard progress lookup failed", error);
+    return safeError("Could not load dashboard.", 500);
   }
 
-  const completed = (rows ?? []).filter((r) => r.status === "completed");
-  const certificatesCount = completed.length;
+  const { count: certificatesCount, error: certificateError } = await supabase
+    .from("user_course_certificates")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  if (certificateError) {
+    console.error("Dashboard certificate count failed", certificateError);
+  }
 
   const inProgress = (rows ?? []).filter((r) => r.status === "in_progress");
   const continueCourse = inProgress[0] ?? null;
@@ -46,7 +54,7 @@ export async function GET() {
 
   return NextResponse.json({
     user: { fullName },
-    certificatesCount,
+    certificatesCount: certificatesCount ?? (rows ?? []).filter((r) => r.status === "completed").length,
     continueCourse: continueCourse
       ? {
           title: continueCourse.course_title,
@@ -57,4 +65,3 @@ export async function GET() {
     recentActivity,
   });
 }
-

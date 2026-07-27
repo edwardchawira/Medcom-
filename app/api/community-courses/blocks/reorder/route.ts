@@ -1,19 +1,35 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { checkSameOrigin, safeError } from "@/lib/api/security";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type ReorderItem = { id: string; sortOrder: number };
+const reorderSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        sortOrder: z.number().int().min(1),
+      })
+    )
+    .min(1)
+    .max(80),
+});
 
 export async function POST(req: Request) {
-  let body: { items?: ReorderItem[] };
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
+  let body: unknown;
   try {
-    body = (await req.json()) as { items?: ReorderItem[] };
+    body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const items = Array.isArray(body.items) ? body.items : [];
-  if (items.length === 0) {
-    return NextResponse.json({ error: "No reorder items supplied." }, { status: 400 });
+  const parsed = reorderSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -25,23 +41,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
 
-  for (const item of items) {
-    if (!item.id || !Number.isInteger(item.sortOrder) || item.sortOrder < 1) {
-      return NextResponse.json({ error: "Invalid reorder item." }, { status: 400 });
-    }
-
-    const { data: updatedBlock, error } = await supabase
-      .from("community_course_lesson_blocks")
-      .update({ sort_order: item.sortOrder, updated_at: new Date().toISOString() })
-      .eq("id", item.id)
-      .select("id")
-      .maybeSingle();
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    if (!updatedBlock) {
-      return NextResponse.json({ error: "Block not found or forbidden" }, { status: 404 });
-    }
+  const { error } = await supabase.rpc("reorder_community_course_lesson_blocks", {
+    p_items: parsed.data.items,
+  });
+  if (error) {
+    console.error("Lesson block reorder failed", error);
+    const status = /forbidden|not found|sign in/i.test(error.message) ? 403 : 400;
+    return safeError("Could not reorder lesson blocks.", status);
   }
 
   return NextResponse.json({ ok: true });

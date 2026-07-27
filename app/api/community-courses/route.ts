@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { checkSameOrigin, safeError } from "@/lib/api/security";
+import { contentBlockPayloadSchema } from "@/lib/courseBuilder/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { slugifyTitle } from "@/lib/slug";
 
@@ -13,7 +16,8 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Community courses list failed", error);
+    return safeError("Could not load courses.", 500);
   }
 
   const courses = (rows ?? []).map((r) => {
@@ -36,39 +40,73 @@ export async function GET() {
   return NextResponse.json({ courses });
 }
 
-type ChapterInput = {
-  title: string;
-  content: string;
-  blocks?: {
-    block_type: "text" | "image" | "quiz";
-    content_json: Record<string, unknown>;
-    source?: "manual" | "ai";
-    status?: "draft" | "published" | "archived";
-  }[];
-  questions?: {
-    prompt: string;
-    options: string[];
-    correctIndex?: number | null;
-    explanation?: string;
-  }[];
-};
+const optionalTrimmedString = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional();
 
-type CreateBody = {
-  title: string;
-  slug?: string;
-  category?: string;
-  audience?: string[];
-  collections?: string[];
-  duration?: string;
-  thumbnail?: string;
-  featured?: boolean;
-  published?: boolean;
-  learning_outcomes?: string[];
-  assessment_html?: string;
-  chapters: ChapterInput[];
-};
+const createBlockSchema = z
+  .object({
+    block_type: z.enum(["text", "image", "quiz"]),
+    content_json: contentBlockPayloadSchema,
+    source: z.enum(["manual", "ai"]).optional().default("manual"),
+    status: z.enum(["draft", "published", "archived"]).optional().default("draft"),
+  })
+  .refine((block) => block.block_type === block.content_json.kind, {
+    message: "Block type must match content kind.",
+    path: ["content_json"],
+  });
+
+const createQuestionSchema = z
+  .object({
+    prompt: z.string().trim().min(1).max(1200),
+    options: z.array(z.string().trim().min(1).max(300)).min(2).max(8),
+    correctIndex: z.number().int().min(0).nullable().optional(),
+    explanation: z.string().trim().max(2000).optional().default(""),
+  })
+  .refine((question) => question.correctIndex == null || question.correctIndex < question.options.length, {
+    message: "Correct answer must be inside the options list.",
+    path: ["correctIndex"],
+  });
+
+const createChapterSchema = z.object({
+  title: z.string().trim().min(1).max(240),
+  content: z.string().trim().min(1).max(60000),
+  blocks: z.array(createBlockSchema).max(80).optional().default([]),
+  questions: z.array(createQuestionSchema).max(40).optional().default([]),
+});
+
+const createCourseSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  slug: optionalTrimmedString(300),
+  category: optionalTrimmedString(120),
+  audience: z.array(z.string().trim().min(1).max(80)).max(20).optional().default([]),
+  collections: z.array(z.string().trim().min(1).max(80)).max(20).optional().default([]),
+  duration: optionalTrimmedString(120),
+  thumbnail: z
+    .string()
+    .trim()
+    .max(2000)
+    .refine((value) => value.startsWith("/") || /^https:\/\/[^ ]+$/i.test(value), {
+      message: "Thumbnail must be a site path or HTTPS URL.",
+    })
+    .optional(),
+  featured: z.boolean().optional(),
+  published: z.boolean().optional().default(false),
+  learning_outcomes: z.array(z.string().trim().min(1).max(300)).max(20).optional().default([]),
+  assessment_html: z.string().max(20000).optional().default(""),
+  chapters: z.array(createChapterSchema).min(1).max(40),
+});
+
+type CreateBody = z.infer<typeof createCourseSchema>;
 
 export async function POST(req: Request) {
+  if (!checkSameOrigin(req)) {
+    return safeError("Invalid request origin.", 403);
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -77,35 +115,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
 
-  let body: CreateBody;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as CreateBody;
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const title = (body.title ?? "").trim();
-  if (!title || title.length > 300) {
-    return NextResponse.json({ error: "Title is required (max 300 characters)." }, { status: 400 });
+  const parsed = createCourseSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-
-  const chaptersIn = Array.isArray(body.chapters) ? body.chapters : [];
-  if (chaptersIn.length < 1) {
-    return NextResponse.json(
-      { error: "Add at least one chapter with title and content." },
-      { status: 400 }
-    );
-  }
-
-  for (let i = 0; i < chaptersIn.length; i++) {
-    const ch = chaptersIn[i];
-    if (!ch.title?.trim() || !ch.content?.trim()) {
-      return NextResponse.json(
-        { error: `Chapter ${i + 1} needs a title and content.` },
-        { status: 400 }
-      );
-    }
-  }
+  const body: CreateBody = parsed.data;
+  const title = body.title;
+  const chaptersIn = body.chapters;
 
   const rawSlug = (body.slug ?? "").trim();
   const slug = rawSlug ? slugifyTitle(rawSlug) : slugifyTitle(title);
@@ -122,49 +145,41 @@ export async function POST(req: Request) {
     );
   }
 
-  const learningOutcomes = Array.isArray(body.learning_outcomes)
-    ? body.learning_outcomes.map((s) => String(s).trim()).filter(Boolean)
-    : [];
+  const learningOutcomes = body.learning_outcomes;
 
-  const audience =
-    Array.isArray(body.audience) && body.audience.length > 0
-      ? body.audience
-      : ["Care Assistant", "Other staff"];
+  const audience = body.audience.length > 0 ? body.audience : ["Care Assistant", "Other staff"];
 
-  const collections = Array.isArray(body.collections) ? body.collections : [];
-
+  const collections = body.collections;
   const { data: course, error: insertErr } = await supabase
     .from("community_courses")
     .insert({
       slug,
       title,
-      category: (body.category ?? "Community").trim() || "Community",
+      category: body.category || "Community",
       audience,
       collections,
-      duration: (body.duration ?? "Self-paced").trim() || "Self-paced",
-      thumbnail: (body.thumbnail ?? "/images/courses/cover-medication.png").trim(),
+      duration: body.duration || "Self-paced",
+      thumbnail: body.thumbnail || "/images/courses/cover-medication.png",
       featured: body.featured !== false,
-      published: body.published !== false,
+      published: false,
       learning_outcomes: learningOutcomes,
-      assessment_html: body.assessment_html ?? "",
+      assessment_html: body.assessment_html,
       created_by: user.id,
     })
     .select("id, slug")
     .single();
 
   if (insertErr || !course) {
-    return NextResponse.json(
-      { error: insertErr?.message ?? "Could not create course." },
-      { status: 500 }
-    );
+    console.error("Community course insert failed", insertErr);
+    return safeError("Could not create course.", 500);
   }
 
   const chapterRows = chaptersIn.map((ch, idx) => ({
     course_id: course.id,
     sort_order: idx + 1,
-    title: ch.title.trim(),
+    title: ch.title,
     html: "",
-    content_md: ch.content.trim(),
+    content_md: ch.content,
   }));
 
   const { data: insertedChapters, error: chErr } = await supabase
@@ -175,7 +190,8 @@ export async function POST(req: Request) {
 
   if (chErr) {
     await supabase.from("community_courses").delete().eq("id", course.id);
-    return NextResponse.json({ error: chErr.message }, { status: 500 });
+    console.error("Community course chapters insert failed", chErr);
+    return safeError("Could not create course chapters.", 500);
   }
 
   const chByOrder = new Map<number, string>();
@@ -194,28 +210,16 @@ export async function POST(req: Request) {
     const ch = chaptersIn[idx];
     const chapterId = chByOrder.get(idx + 1);
     if (!chapterId) continue;
-    const qs = Array.isArray(ch.questions) ? ch.questions : [];
+    const qs = ch.questions;
     for (let qIdx = 0; qIdx < qs.length; qIdx++) {
       const q = qs[qIdx];
-      const prompt = (q.prompt ?? "").trim();
-      const options = Array.isArray(q.options) ? q.options.map((o) => String(o).trim()).filter(Boolean) : [];
-      if (!prompt || options.length < 2) continue;
-      const ci = typeof q.correctIndex === "number" && Number.isInteger(q.correctIndex) ? q.correctIndex : null;
-      if (ci != null && (ci < 0 || ci >= options.length)) {
-        return NextResponse.json(
-          {
-            error: `Question ${qIdx + 1} in chapter ${idx + 1} has a correct answer outside the options list.`,
-          },
-          { status: 400 }
-        );
-      }
       questionRows.push({
         chapter_id: chapterId,
         sort_order: qIdx + 1,
-        prompt,
-        options,
-        correct_index: ci,
-        explanation: (q.explanation ?? "").trim(),
+        prompt: q.prompt,
+        options: q.options,
+        correct_index: q.correctIndex ?? null,
+        explanation: q.explanation,
       });
     }
   }
@@ -224,7 +228,8 @@ export async function POST(req: Request) {
     const { error: qErr } = await supabase.from("community_chapter_questions").insert(questionRows);
     if (qErr) {
       await supabase.from("community_courses").delete().eq("id", course.id);
-      return NextResponse.json({ error: qErr.message }, { status: 500 });
+      console.error("Community course questions insert failed", qErr);
+      return safeError("Could not create course questions.", 500);
     }
   }
 
@@ -241,16 +246,15 @@ export async function POST(req: Request) {
   chaptersIn.forEach((ch, idx) => {
     const chapterId = chByOrder.get(idx + 1);
     if (!chapterId) return;
-    const blocks = Array.isArray(ch.blocks) ? ch.blocks : [];
+    const blocks = ch.blocks;
     blocks.forEach((block, blockIdx) => {
-      if (!block?.block_type || !block?.content_json) return;
       blockRows.push({
         chapter_id: chapterId,
         sort_order: blockIdx + 1,
         block_type: block.block_type,
         content_json: block.content_json,
-        source: block.source === "ai" ? "ai" : "manual",
-        status: block.status ?? "draft",
+        source: block.source,
+        status: block.status,
         created_by: user.id,
       });
     });
@@ -260,7 +264,8 @@ export async function POST(req: Request) {
     const { error: blockErr } = await supabase.from("community_course_lesson_blocks").insert(blockRows);
     if (blockErr) {
       await supabase.from("community_courses").delete().eq("id", course.id);
-      return NextResponse.json({ error: blockErr.message }, { status: 500 });
+      console.error("Community course blocks insert failed", blockErr);
+      return safeError("Could not create course learning blocks.", 500);
     }
   }
 

@@ -61,28 +61,30 @@ export const courseDraftSchema = z.object({
 });
 
 export const generateOutlineRequestSchema = z.object({
-  prompt: z.string().min(10),
-  title: z.string().min(1),
-  audience: z.array(z.string()).default([]),
+  prompt: z.string().min(10).max(6000),
+  title: z.string().min(1).max(300),
+  audience: z.array(z.string().min(1).max(80)).max(12).default([]),
   level: z.enum(["beginner", "intermediate", "advanced"]).default("intermediate"),
-  duration: z.string().default("Self-paced"),
+  duration: z.string().max(120).default("Self-paced"),
+  sourceText: z.string().max(60000).optional().default(""),
+  sourceNames: z.array(z.string().min(1).max(240)).max(12).optional().default([]),
 });
 
 export const generateBlockRequestSchema = z.object({
-  chapterTitle: z.string().min(1),
-  courseTitle: z.string().min(1),
-  contextMarkdown: z.string().default(""),
+  chapterTitle: z.string().min(1).max(240),
+  courseTitle: z.string().min(1).max(300),
+  contextMarkdown: z.string().max(30000).default(""),
   blockType: z.enum(["text", "image", "quiz"]),
-  prompt: z.string().min(8),
+  prompt: z.string().min(8).max(4000),
 });
 
 export const regenerateBlockRequestSchema = z.object({
   blockId: z.string().min(1),
   blockType: z.enum(["text", "image", "quiz"]),
-  prompt: z.string().min(8),
-  courseTitle: z.string().min(1),
-  chapterTitle: z.string().min(1),
-  contextMarkdown: z.string().default(""),
+  prompt: z.string().min(8).max(4000),
+  courseTitle: z.string().min(1).max(300),
+  chapterTitle: z.string().min(1).max(240),
+  contextMarkdown: z.string().max(30000).default(""),
 });
 
 export type ContentBlock = z.infer<typeof contentBlockSchema>;

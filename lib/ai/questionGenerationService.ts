@@ -1,6 +1,21 @@
 import { generateText, Output } from "ai";
-import { getOpenAIModel } from "@/lib/ai/provider";
+import { z } from "zod";
+import { getOpenAIModel, shouldUseAiFallback } from "@/lib/ai/provider";
 import { questionBlockSchema } from "@/lib/courseBuilder/types";
+
+const generatedQuestionBlockSchema = z.object({
+  kind: z.literal("quiz"),
+  title: z.string().min(1),
+  questions: z.array(
+    z.object({
+      type: z.enum(["multiple_choice", "short_answer", "true_false"]),
+      question: z.string().min(1),
+      options: z.array(z.string()),
+      answer: z.string().min(1),
+      explanation: z.string(),
+    })
+  ).min(1),
+});
 
 export async function generateQuestionBlock(input: {
   courseTitle: string;
@@ -31,19 +46,23 @@ export async function generateQuestionBlock(input: {
         {
           type: "short_answer",
           question: "Name one moment when you should pause to verify your work.",
+          options: [],
           answer: "Before proceeding to the next step (verification checkpoint).",
           explanation: "Verification checkpoints prevent compounding mistakes.",
         },
       ],
     });
   if (!model) {
+    if (!shouldUseAiFallback()) {
+      throw new Error("AI generation is not configured.");
+    }
     return fallback();
   }
 
   try {
     const result = await generateText({
       model,
-      output: Output.object({ schema: questionBlockSchema }),
+      output: Output.object({ schema: generatedQuestionBlockSchema }),
       prompt: `Generate a quiz block aligned to this lesson.
 Course: ${input.courseTitle}
 Chapter: ${input.chapterTitle}
@@ -54,9 +73,11 @@ ${input.contextMarkdown}
 Include MCQ, short-answer, and true/false questions where appropriate.`,
     });
 
-    return result.output;
-  } catch {
+    return questionBlockSchema.parse(result.output);
+  } catch (error) {
+    if (!shouldUseAiFallback()) {
+      throw error;
+    }
     return fallback();
   }
 }
-

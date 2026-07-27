@@ -26,6 +26,20 @@ function slugifyCourseTitle(title: string) {
 
 export const courses: Course[] = [
   {
+    id: 100,
+    title: "AI Healthcare Learning Experience Demo",
+    category: "Community",
+    audience: ["Care Assistant", "Senior Care Assistant", "Registered Manager", "Nurse"],
+    collections: ["Care Essentials collection"],
+    chapters: 5,
+    duration: "18-25 minutes",
+    thumbnail: "/images/courses/cover-medication.png",
+    recommended: true,
+    slug: "ai-healthcare-learning-demo",
+    detailPath: "/courses/ai-healthcare-learning-demo/overview",
+    startPath: "/courses/ai-healthcare-learning-demo/learn/1",
+  },
+  {
     id: 1,
     title: "Prompting and assisting with medication in Home Care",
     category: "Medicines Management",

@@ -76,7 +76,6 @@ const allowedClasses = [
   "demo-tab-list",
   "demo-tabbed-row",
   "demo-video-block",
-  "demo-video-meta",
   "demo-video-player",
   "demo-video-screen",
   "demo-warning",

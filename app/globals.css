@@ -239,16 +239,6 @@ body {
   font-weight: 800;
 }
 
-.demo-video-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: space-between;
-  padding: 0.8rem 1rem;
-  color: #cbd5e1;
-  font-size: 0.85rem;
-}
-
 .demo-procedure ol,
 .demo-ordering ol {
   display: grid;

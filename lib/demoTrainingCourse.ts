@@ -308,11 +308,6 @@ export const demoTrainingCourse = {
           <video class="demo-video-player" controls preload="metadata" playsinline aria-label="Derby Inspire Youth CIC safeguarding training video">
             <source src="/videos/derby-inspire-youth-safeguarding.mp4" type="video/mp4" />
           </video>
-          <div class="demo-video-meta">
-            <span>Derby Inspire Youth CIC safeguarding video</span>
-            <span>Native controls</span>
-            <span>Transcript notes below</span>
-          </div>
         </div>
 
         <details class="demo-expandable">

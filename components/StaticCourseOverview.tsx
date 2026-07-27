@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { SiteNav } from "@/components/SiteNav";
+import { demoTrainingCourse } from "@/lib/demoTrainingCourse";
 import type { Course } from "@/lib/siteData";
 
 type AccordionRow = { title: string; body: string };
@@ -19,24 +20,43 @@ export function StaticCourseOverview({
   const certPrice = "£10.79";
   const learningPrice = "Free";
   const durationLabel = course.duration.replace("-", "–");
+  const isDemoSafeguardingCourse = course.slug === demoTrainingCourse.slug;
 
   const curriculum = useMemo(
-    () =>
-      Array.from({ length: Math.min(12, course.chapters) }).map((_, idx) => ({
+    () => {
+      if (isDemoSafeguardingCourse) {
+        return demoTrainingCourse.lessons.map((lesson, idx) => ({
+          key: String(idx + 1).padStart(2, "0"),
+          title: lesson.title,
+          body:
+            lesson.objectives.length > 0
+              ? lesson.objectives.join(" ")
+              : "Interactive safeguarding guidance, learner checks, and practical examples.",
+          meta: `${lesson.minutes} min • ${lesson.kind}`,
+        }));
+      }
+
+      return Array.from({ length: Math.min(12, course.chapters) }).map((_, idx) => ({
         key: String(idx + 1).padStart(2, "0"),
         title: `Chapter ${idx + 1}`,
-      })),
-    [course.chapters]
+        body: "Short interactive content, quick checks, and practical guidance.",
+        meta: null,
+      }));
+    },
+    [course.chapters, isDemoSafeguardingCourse]
   );
 
   const outcomes = useMemo(
-    () => [
-      `Understand key concepts in ${course.title}.`,
-      "Recognise common risks and when to escalate concerns.",
-      "Apply practical guidance in day-to-day care.",
-      "Communicate observations clearly to the wider team.",
-    ],
-    [course.title]
+    () =>
+      isDemoSafeguardingCourse
+        ? demoTrainingCourse.learningOutcomes
+        : [
+            `Understand key concepts in ${course.title}.`,
+            "Recognise common risks and when to escalate concerns.",
+            "Apply practical guidance in day-to-day care.",
+            "Communicate observations clearly to the wider team.",
+          ],
+    [course.title, isDemoSafeguardingCourse]
   );
 
   const faqs: AccordionRow[] = useMemo(
@@ -153,6 +173,11 @@ export function StaticCourseOverview({
                           <span className="flex-1 text-sm font-semibold text-slate-900">
                             {row.title}
                           </span>
+                          {row.meta ? (
+                            <span className="hidden rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 sm:inline-flex">
+                              {row.meta}
+                            </span>
+                          ) : null}
                           <i
                             className={`fas fa-chevron-down text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
                             aria-hidden
@@ -164,7 +189,12 @@ export function StaticCourseOverview({
                           }`}
                         >
                           <div className="overflow-hidden">
-                            Short interactive content, quick checks, and practical guidance.
+                            <p className="leading-relaxed">{row.body}</p>
+                            {row.meta ? (
+                              <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-teal-700 sm:hidden">
+                                {row.meta}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       </button>
@@ -288,4 +318,3 @@ export function StaticCourseOverview({
     </>
   );
 }
-

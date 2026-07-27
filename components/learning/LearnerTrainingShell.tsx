@@ -74,17 +74,22 @@ function moduleNumber(index: number, lessonCount: number) {
 }
 
 const RAIL_STORAGE_KEY = "medcom_learning_module_rail_expanded";
+let cachedRailExpanded: boolean | null = null;
 
 function loadRailExpanded() {
-  if (typeof window === "undefined") return true;
+  if (cachedRailExpanded != null) return cachedRailExpanded;
+  if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(RAIL_STORAGE_KEY) !== "false";
+    const expanded = window.localStorage.getItem(RAIL_STORAGE_KEY) !== "false";
+    cachedRailExpanded = expanded;
+    return expanded;
   } catch {
-    return true;
+    return false;
   }
 }
 
 function saveRailExpanded(expanded: boolean) {
+  cachedRailExpanded = expanded;
   try {
     window.localStorage.setItem(RAIL_STORAGE_KEY, String(expanded));
   } catch {
@@ -116,7 +121,7 @@ export function LearnerTrainingShell({
 }: Props) {
   const reduceMotion = useReducedMotion();
   const transition = { duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] };
-  const [railExpanded, setRailExpandedState] = useState(false);
+  const [railExpanded, setRailExpandedState] = useState(() => cachedRailExpanded ?? false);
   const [openModules, setOpenModules] = useState<Set<number>>(() => new Set([1]));
   const isLast = activeLessonIndex >= totalSteps - 1;
 

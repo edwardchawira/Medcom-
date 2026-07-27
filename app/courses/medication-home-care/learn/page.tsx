@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function MedicationLearnIndexPage() {
-  redirect("/courses/medication-home-care/learn/1");
+  redirect("/courses/ai-healthcare-learning-demo/learn/1");
 }

@@ -59,21 +59,7 @@ export function SiteNav({ activeOverride }: { activeOverride?: string }) {
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {authed ? (
-              <>
-                <Link
-                  href="/courses/upload"
-                  aria-label="Upload a course"
-                  className={`nav-link inline-flex items-center rounded-md px-2.5 sm:px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                    pathname.startsWith("/courses/upload")
-                      ? "text-teal-800 bg-teal-50 ring-1 ring-teal-200/80"
-                      : "text-teal-700 hover:text-teal-900 hover:bg-teal-50/90"
-                  }`}
-                >
-                  <i className="fas fa-cloud-arrow-up mr-1.5 sm:mr-2" aria-hidden />
-                  Upload
-                </Link>
-                <AccountMenu />
-              </>
+              <AccountMenu />
             ) : (
               <Link
                 href="/welcome"

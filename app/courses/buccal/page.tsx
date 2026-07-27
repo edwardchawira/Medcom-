@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function BuccalCoursePage() {
-  redirect("/courses/buccal/overview");
+  redirect("/courses/ai-healthcare-learning-demo/overview");
 }

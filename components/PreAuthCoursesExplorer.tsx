@@ -2,12 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  communityCourseToCatalog,
-  staticCourseToCatalog,
-  type CommunityCourseListDto,
-} from "@/lib/catalogCourse";
+import { staticCourseToCatalog } from "@/lib/catalogCourse";
 import { courses as allCourses } from "@/lib/siteData";
 import { filterCourses, type CourseFilters } from "@/lib/courseFilters";
 
@@ -53,26 +48,6 @@ export function PreAuthCoursesExplorer({
 
   const staticCatalog = useMemo(() => allCourses.map(staticCourseToCatalog), []);
 
-  const { data: communityRows } = useQuery({
-    queryKey: ["community-courses-catalog"],
-    queryFn: async () => {
-      const res = await fetch("/api/community-courses");
-      if (!res.ok) return [] as CommunityCourseListDto[];
-      const j = (await res.json()) as { courses?: CommunityCourseListDto[] };
-      return j.courses ?? [];
-    },
-  });
-
-  const communityCatalog = useMemo(
-    () => (communityRows ?? []).map(communityCourseToCatalog),
-    [communityRows]
-  );
-
-  const mergedCatalog = useMemo(
-    () => [...staticCatalog, ...communityCatalog],
-    [communityCatalog, staticCatalog]
-  );
-
   const filters: CourseFilters = useMemo(
     () => ({
       category,
@@ -85,8 +60,8 @@ export function PreAuthCoursesExplorer({
   );
 
   const filtered = useMemo(
-    () => filterCourses(mergedCatalog, filters),
-    [filters, mergedCatalog]
+    () => filterCourses(staticCatalog, filters),
+    [filters, staticCatalog]
   );
 
   function clearFilters() {
@@ -234,4 +209,3 @@ export function PreAuthCoursesExplorer({
     </div>
   );
 }
-

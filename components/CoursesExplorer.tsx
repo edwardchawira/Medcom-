@@ -3,12 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  communityCourseToCatalog,
-  staticCourseToCatalog,
-  type CommunityCourseListDto,
-} from "@/lib/catalogCourse";
+import { staticCourseToCatalog } from "@/lib/catalogCourse";
 import { courses as allCourses } from "@/lib/siteData";
 import { filterCourses, type CourseFilters } from "@/lib/courseFilters";
 
@@ -49,26 +44,6 @@ export function CoursesExplorer() {
 
   const staticCatalog = useMemo(() => allCourses.map(staticCourseToCatalog), []);
 
-  const { data: communityRows } = useQuery({
-    queryKey: ["community-courses-catalog"],
-    queryFn: async () => {
-      const res = await fetch("/api/community-courses");
-      if (!res.ok) return [] as CommunityCourseListDto[];
-      const j = (await res.json()) as { courses?: CommunityCourseListDto[] };
-      return j.courses ?? [];
-    },
-  });
-
-  const communityCatalog = useMemo(
-    () => (communityRows ?? []).map(communityCourseToCatalog),
-    [communityRows]
-  );
-
-  const mergedCatalog = useMemo(
-    () => [...staticCatalog, ...communityCatalog],
-    [communityCatalog, staticCatalog]
-  );
-
   const filters: CourseFilters = useMemo(
     () => ({
       category,
@@ -81,15 +56,9 @@ export function CoursesExplorer() {
   );
 
   const filtered = useMemo(
-    () => filterCourses(mergedCatalog, filters),
-    [filters, mergedCatalog]
+    () => filterCourses(staticCatalog, filters),
+    [filters, staticCatalog]
   );
-
-  const recommended = useMemo(() => {
-    const stat = staticCatalog.filter((c) => c.recommended);
-    const comm = communityCatalog.filter((c) => c.recommended);
-    return [...stat, ...comm];
-  }, [communityCatalog, staticCatalog]);
 
   function clearFilters() {
     setCategory("");
@@ -102,48 +71,6 @@ export function CoursesExplorer() {
     <div className="content-container max-w-6xl mx-auto px-4 sm:px-8 pt-9 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Courses</h1>
-        <Link
-          href="/courses/upload"
-          className="text-sm font-semibold text-teal-700 hover:text-teal-900 whitespace-nowrap"
-        >
-          Upload a course
-        </Link>
-      </div>
-
-      <div className="mb-10">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Recommended for you</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {recommended.map((course) => (
-            <article
-              key={course.id}
-              className="course-card bg-white rounded-lg shadow-md overflow-hidden flex flex-col"
-            >
-              <div className="relative h-48 w-full">
-                <Image
-                  src={course.thumbnail}
-                  alt=""
-                  fill
-                  className="object-cover"
-                  sizes="(max-width:768px) 100vw, 33vw"
-                  unoptimized
-                />
-              </div>
-              <div className="p-6 flex flex-col flex-1">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">{course.title}</h3>
-                <div className="flex justify-between text-sm text-slate-600 mb-4">
-                  <span>{course.chapters} chapters</span>
-                  <span>{course.duration}</span>
-                </div>
-                <Link
-                  href={course.detailPath}
-                  className="mt-auto w-full block text-center border-2 border-teal-600 text-teal-600 py-2 rounded-md hover:bg-teal-600 hover:text-white transition-colors font-medium"
-                >
-                  View details
-                </Link>
-              </div>
-            </article>
-          ))}
-        </div>
       </div>
 
       <div className="mb-6 flex flex-col gap-3">

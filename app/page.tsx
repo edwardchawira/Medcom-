@@ -9,7 +9,6 @@ import { useDashboard } from "@/lib/dashboard/useDashboard";
 export default function HomePage() {
   const { data } = useMe();
   const name = data && "user" in data && data.user ? data.user.fullName : "there";
-  const authed = !!(data && "user" in data && data.user);
   const dash = useDashboard();
   const dashName = dash.data?.user?.fullName;
   const displayName = dashName || name;
@@ -55,15 +54,6 @@ export default function HomePage() {
                   <i className="fas fa-graduation-cap mr-2 text-sm" aria-hidden />
                   My learning
                 </Link>
-                {authed ? (
-                  <Link
-                    href="/courses/upload"
-                    className="inline-flex items-center justify-center rounded-lg border border-teal-200 bg-white/90 px-5 py-2.5 text-sm font-semibold text-teal-900 shadow-sm transition hover:bg-teal-50 no-underline"
-                  >
-                    <i className="fas fa-cloud-arrow-up mr-2 text-sm" aria-hidden />
-                    Upload a course
-                  </Link>
-                ) : null}
               </div>
             </div>
             <div className="order-1 lg:order-2">

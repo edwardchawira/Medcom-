@@ -33,7 +33,7 @@ export const courses: Course[] = [
     collections: ["Care Essentials collection"],
     chapters: 5,
     duration: "18-25 minutes",
-    thumbnail: "/images/courses/cover-medication.png",
+    thumbnail: "/images/courses/cover-demo-safeguarding-awareness.jpg",
     recommended: true,
     slug: "ai-healthcare-learning-demo",
     detailPath: "/courses/ai-healthcare-learning-demo/overview",

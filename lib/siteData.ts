@@ -105,7 +105,7 @@ export const userProgress: UserProgressRow[] = [
   {
     course: "Demo Saafeguarding Awareness",
     status: "In progress",
-    progress: 0,
+    progress: 35,
   },
 ];
 

@@ -27,7 +27,7 @@ function slugifyCourseTitle(title: string) {
 export const courses: Course[] = [
   {
     id: 100,
-    title: "Demo Saafeguarding Awareness",
+    title: "Demo Safeguarding Awareness",
     category: "Community",
     audience: ["Care Assistant", "Senior Care Assistant", "Registered Manager", "Nurse"],
     collections: ["Care Essentials collection"],
@@ -103,7 +103,7 @@ export type UserProgressRow = {
 
 export const userProgress: UserProgressRow[] = [
   {
-    course: "Demo Saafeguarding Awareness",
+    course: "Demo Safeguarding Awareness",
     status: "In progress",
     progress: 35,
   },

@@ -161,7 +161,7 @@ export async function POST(req: Request) {
       duration: body.duration || "Self-paced",
       thumbnail: body.thumbnail || "/images/courses/cover-medication.png",
       featured: body.featured !== false,
-      published: false,
+      published: body.published,
       learning_outcomes: learningOutcomes,
       assessment_html: body.assessment_html,
       created_by: user.id,

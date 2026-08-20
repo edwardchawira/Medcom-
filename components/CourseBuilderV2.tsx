@@ -70,6 +70,13 @@ function questionsFromBlocks(blocks: ContentBlock[]) {
   );
 }
 
+function learningOutcomesFromChapters(chapters: Chapter[]) {
+  return chapters.slice(0, 5).map((chapter) => {
+    const cleanTitle = chapter.title.replace(/^chapter\s+\d+[:.)-]?\s*/i, "").trim();
+    return `Explain and apply the key safe-practice points from ${cleanTitle || chapter.title}.`;
+  });
+}
+
 type ExtractedSource = Awaited<ReturnType<typeof apiExtractSource>>;
 
 function formatBytes(bytes: number) {
@@ -203,12 +210,20 @@ export function CourseBuilderV2() {
           .split(",")
           .map((entry) => entry.trim())
           .filter(Boolean),
-        learning_outcomes: [],
-        assessment_html: "## Final assessment\n\nComplete each question and review your answers.",
+        learning_outcomes: learningOutcomesFromChapters(chapters),
+        assessment_html:
+          "## Final assessment\n\nAnswer all questions, submit once, review your result, retry if needed, and unlock your certificate after meeting the pass mark.",
+        published: true,
         chapters: chapters.map((chapter) => ({
           title: chapter.title,
           content: markdownFromBlocks(chapter.blocks),
           questions: questionsFromBlocks(chapter.blocks),
+          blocks: chapter.blocks.map((block) => ({
+            block_type: block.payload.kind,
+            content_json: block.payload,
+            source: block.source,
+            status: "published",
+          })),
         })),
       };
 
@@ -350,8 +365,10 @@ export function CourseBuilderV2() {
     sourceMutation.mutate(files);
   }
 
+  const canCreateCourse = chapters.length > 0 && !publishMutation.isPending;
+
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 pb-24">
       <SiteNav />
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-8">
         <motion.div
@@ -487,12 +504,21 @@ export function CourseBuilderV2() {
             <button
               type="button"
               onClick={() => publishMutation.mutate()}
-              disabled={chapters.length === 0 || publishMutation.isPending}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+              disabled={!canCreateCourse}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                canCreateCourse
+                  ? "bg-teal-600 text-white hover:bg-teal-700"
+                  : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
             >
-              {publishMutation.isPending ? "Saving..." : "Save draft"}
+              {publishMutation.isPending ? "Creating..." : "Create course"}
             </button>
           </div>
+          {chapters.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">
+              Generate a course outline first, then use Create course to publish it.
+            </p>
+          ) : null}
           {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
         </motion.div>
 
@@ -777,6 +803,27 @@ export function CourseBuilderV2() {
           </section>
         </div>
       </div>
+
+      {chapters.length > 0 ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{title || "Untitled course"}</p>
+              <p className="text-xs text-slate-600">
+                {chapters.length} module{chapters.length === 1 ? "" : "s"} ready to publish
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => publishMutation.mutate()}
+              disabled={!canCreateCourse}
+              className="inline-flex shrink-0 items-center justify-center rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {publishMutation.isPending ? "Creating..." : "Create course"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

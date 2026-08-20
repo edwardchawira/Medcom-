@@ -59,7 +59,16 @@ export function SiteNav({ activeOverride }: { activeOverride?: string }) {
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {authed ? (
-              <AccountMenu />
+              <>
+                <Link
+                  href="/courses/upload"
+                  className="hidden sm:inline-flex shrink-0 items-center rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 no-underline whitespace-nowrap"
+                >
+                  <i className="fas fa-plus mr-1.5 text-xs" aria-hidden />
+                  Create course
+                </Link>
+                <AccountMenu />
+              </>
             ) : (
               <Link
                 href="/welcome"

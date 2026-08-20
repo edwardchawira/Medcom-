@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useMe } from "@/lib/auth/useMe";
 import { staticCourseToCatalog } from "@/lib/catalogCourse";
 import { courses as allCourses } from "@/lib/siteData";
 import { filterCourses, type CourseFilters } from "@/lib/courseFilters";
@@ -36,6 +37,8 @@ const collectionNames = [
 ];
 
 export function CoursesExplorer() {
+  const { data } = useMe();
+  const authed = !!(data && "user" in data && data.user);
   const [category, setCategory] = useState("");
   const [audience, setAudience] = useState("");
   const [duration, setDuration] = useState("");
@@ -71,6 +74,15 @@ export function CoursesExplorer() {
     <div className="content-container max-w-6xl mx-auto px-4 sm:px-8 pt-9 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Courses</h1>
+        {authed ? (
+          <Link
+            href="/courses/upload"
+            className="inline-flex items-center justify-center rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 no-underline"
+          >
+            <i className="fas fa-plus mr-2 text-xs" aria-hidden />
+            Create course
+          </Link>
+        ) : null}
       </div>
 
       <div className="mb-6 flex flex-col gap-3">
